@@ -1,0 +1,15 @@
+# This repository publishes only the standalone Android project.
+*
+!.gitignore
+!README.md
+!build_android.bat
+!android/
+!android/**
+
+android/.gradle/
+android/local.properties
+android/build/
+android/app/build/
+*.jks
+*.keystore
+*.apk
