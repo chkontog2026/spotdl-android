@@ -45,7 +45,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class UpdateManager {
     record Release(String version, String assetName, String downloadUrl, String digest, String notes) {}
 
-    private static final String RELEASE_API = "https://api.github.com/repos/chkontog/spotdl-android/releases/latest";
+    private static final String RELEASE_API = "https://api.github.com/repos/chkontog2026/spotdl-android/releases/latest";
     private static final String PREFS = "app_updates";
     private static final String KEY_LAST_CHECK = "last_check_ms";
     private static final String KEY_DOWNLOAD_ID = "download_id";

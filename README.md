@@ -4,7 +4,7 @@
 
 ## Ενημερώσεις εφαρμογής
 
-Η εφαρμογή ελέγχει αυτόματα το τελευταίο public release του `chkontog/spotdl-android`. Επιλέγει το ARM64 APK όταν είναι συμβατό και διαφορετικά χρησιμοποιεί το Universal APK. Πριν παραδώσει μια ενημέρωση στον Android installer επαληθεύει:
+Η εφαρμογή ελέγχει αυτόματα το τελευταίο public release του `chkontog2026/spotdl-android`. Επιλέγει το ARM64 APK όταν είναι συμβατό και διαφορετικά χρησιμοποιεί το Universal APK. Πριν παραδώσει μια ενημέρωση στον Android installer επαληθεύει:
 
 - το SHA-256 που επιστρέφει το GitHub Releases API, όταν είναι διαθέσιμο,
 - το Android package name,
@@ -21,8 +21,8 @@
 
 Δημιουργούνται:
 
-- `android-releases/SpotDL_Android_ARM64_v1.1.0.apk`
-- `android-releases/SpotDL_Android_Universal_v1.1.0.apk`
+- `android-releases/SpotDL_Android_ARM64_v1.1.1.apk`
+- `android-releases/SpotDL_Android_Universal_v1.1.1.apk`
 
 Για να μπορούν να εγκατασταθούν οι επόμενες εκδόσεις ως ενημερώσεις, όλα τα APK πρέπει να υπογράφονται με το ίδιο ιδιωτικό signing key.
 
