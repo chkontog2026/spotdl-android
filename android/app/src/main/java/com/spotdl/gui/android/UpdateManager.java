@@ -47,13 +47,11 @@ final class UpdateManager {
 
     private static final String RELEASE_API = "https://api.github.com/repos/chkontog2026/spotdl-android/releases/latest";
     private static final String PREFS = "app_updates";
-    private static final String KEY_LAST_CHECK = "last_check_ms";
     private static final String KEY_DOWNLOAD_ID = "download_id";
     private static final String KEY_ASSET_NAME = "asset_name";
     private static final String KEY_DIGEST = "asset_digest";
     private static final String KEY_INSTALL_REQUESTED = "install_requested";
     private static final String KEY_PERMISSION_PROMPTED = "permission_prompted";
-    private static final long AUTO_CHECK_INTERVAL_MS = 12L * 60L * 60L * 1000L;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final AtomicBoolean VERIFYING = new AtomicBoolean();
 
@@ -61,13 +59,15 @@ final class UpdateManager {
 
     static void checkForUpdates(Activity activity, boolean manual) {
         SharedPreferences prefs = prefs(activity);
-        if (!manual && System.currentTimeMillis() - prefs.getLong(KEY_LAST_CHECK, 0L) < AUTO_CHECK_INTERVAL_MS) return;
+        if (prefs.getLong(KEY_DOWNLOAD_ID, -1L) >= 0L) {
+            resumePendingInstall(activity);
+            return;
+        }
         if (manual) Toast.makeText(activity, "Έλεγχος για νέα έκδοση…", Toast.LENGTH_SHORT).show();
         EXECUTOR.execute(() -> {
             try {
                 Release release = readLatestRelease();
                 if (compareVersions(release.version(), BuildConfig.VERSION_NAME) <= 0) {
-                    prefs.edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply();
                     if (manual) onMain(() -> Toast.makeText(activity, "Έχεις ήδη την τελευταία έκδοση.", Toast.LENGTH_LONG).show());
                     return;
                 }
@@ -162,7 +162,6 @@ final class UpdateManager {
             return;
         }
         prefs(activity).edit()
-                .putLong(KEY_LAST_CHECK, System.currentTimeMillis())
                 .putLong(KEY_DOWNLOAD_ID, id)
                 .putString(KEY_ASSET_NAME, release.assetName())
                 .putString(KEY_DIGEST, release.digest())
@@ -187,6 +186,7 @@ final class UpdateManager {
         DownloadManager.Query query = new DownloadManager.Query().setFilterById(id);
         try (android.database.Cursor cursor = activity.getSystemService(DownloadManager.class).query(query)) {
             if (cursor == null || !cursor.moveToFirst()) {
+                clearPending(activity, false);
                 VERIFYING.set(false);
                 return;
             }
