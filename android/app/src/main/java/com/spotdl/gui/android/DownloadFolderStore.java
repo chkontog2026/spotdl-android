@@ -98,9 +98,10 @@ final class DownloadFolderStore {
 
     static String deliverToSelection(Context context, Uri treeUri, File sourceDirectory, String folderName) throws Exception {
         Uri destinationDirectory = findOrCreateDirectory(context, treeUri, SpotifyEmbedParser.safeName(folderName));
-        File[] mp3Files = sourceDirectory.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".mp3"));
-        if (mp3Files == null || mp3Files.length == 0) throw new IllegalStateException("Δεν βρέθηκαν MP3 για αποθήκευση.");
-        for (File mp3 : mp3Files) copyFile(context, treeUri, destinationDirectory, mp3);
+        File[] files = sourceDirectory.listFiles((dir, name) ->
+                name.toLowerCase(Locale.ROOT).endsWith(".mp3") || name.equalsIgnoreCase("Cover.jpg"));
+        if (files == null || files.length == 0) throw new IllegalStateException("Δεν βρέθηκαν αρχεία για αποθήκευση.");
+        for (File file : files) copyFile(context, treeUri, destinationDirectory, file);
         deleteStagingDirectory(context, sourceDirectory);
         return selectionLabel(context) + "/" + SpotifyEmbedParser.safeName(folderName);
     }
@@ -139,7 +140,7 @@ final class DownloadFolderStore {
             destination = DocumentsContract.createDocument(
                     context.getContentResolver(),
                     parent,
-                    "audio/mpeg",
+                    source.getName().equalsIgnoreCase("Cover.jpg") ? "image/jpeg" : "audio/mpeg",
                     source.getName()
             );
         } else {

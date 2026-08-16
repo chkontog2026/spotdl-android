@@ -6,6 +6,8 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.IBinder;
@@ -15,7 +17,11 @@ import com.yausername.youtubedl_android.YoutubeDLException;
 import com.yausername.youtubedl_android.YoutubeDLRequest;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -54,6 +60,8 @@ public final class DownloadService extends Service {
     private static final String LAST_ENGINE_UPDATE = "last_nightly_update_ms";
     private static final long ENGINE_UPDATE_INTERVAL_MS = 12L * 60L * 60L * 1000L;
     private static final long TRACK_TIMEOUT_MS = 8L * 60L * 1000L;
+    private static final int COVER_CONNECT_TIMEOUT_MS = 15000;
+    private static final int COVER_READ_TIMEOUT_MS = 30000;
     private static final String FALLBACK_YOUTUBE_CLIENT = "android_vr";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -88,11 +96,13 @@ public final class DownloadService extends Service {
             updateDownloadEngineIfNeeded();
             List<SpotifyEmbedParser.Track> tracks = new ArrayList<>();
             String folderName = "SpotDL Downloads";
+            String coverUrl = "";
             if (SpotifyEmbedParser.isSpotify(url)) {
                 sendProgress(1, "Ανάγνωση στοιχείων Spotify…", false, false);
                 SpotifyEmbedParser.Collection collection = SpotifyEmbedParser.read(url);
                 tracks.addAll(collection.tracks());
                 folderName = collection.title();
+                coverUrl = collection.coverUrl();
             } else {
                 tracks.add(new SpotifyEmbedParser.Track("%(title)s", ""));
             }
@@ -163,9 +173,16 @@ public final class DownloadService extends Service {
                 failures = remaining;
             }
 
+            if (spotify && !coverUrl.isBlank() && containsMp3(output)) {
+                sendProgress(99, "Αποθήκευση Cover.jpg…", false, false);
+                try {
+                    downloadCover(coverUrl, new File(output, "Cover.jpg"));
+                } catch (Exception ignored) {}
+            }
+
             String destination;
             if (customFolder && containsMp3(output)) {
-                sendProgress(99, "Αποθήκευση MP3 στον επιλεγμένο φάκελο…", false, false);
+                sendProgress(99, "Αποθήκευση αρχείων στον επιλεγμένο φάκελο…", false, false);
                 destination = DownloadFolderStore.deliverToSelection(this, customTree, output, folderName);
             } else if (customFolder) {
                 DownloadFolderStore.discardEmptyStaging(this, output);
@@ -332,6 +349,38 @@ public final class DownloadService extends Service {
                 || normalized.contains("music.youtube.com/");
     }
 
+    private void downloadCover(String coverUrl, File destination) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(coverUrl).openConnection();
+        connection.setConnectTimeout(COVER_CONNECT_TIMEOUT_MS);
+        connection.setReadTimeout(COVER_READ_TIMEOUT_MS);
+        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36");
+        int status = connection.getResponseCode();
+        if (status < 200 || status >= 300) {
+            connection.disconnect();
+            throw new IOException("Η λήψη του cover επέστρεψε HTTP " + status);
+        }
+
+        File temporary = new File(destination.getParentFile(), destination.getName() + ".tmp");
+        Bitmap bitmap = null;
+        try (InputStream input = connection.getInputStream()) {
+            bitmap = BitmapFactory.decodeStream(input);
+            if (bitmap == null) throw new IOException("Το cover δεν είναι έγκυρη εικόνα.");
+            try (FileOutputStream output = new FileOutputStream(temporary)) {
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, output)) {
+                    throw new IOException("Δεν αποθηκεύτηκε το Cover.jpg.");
+                }
+            }
+            if (destination.exists() && !destination.delete()) {
+                throw new IOException("Δεν αντικαταστάθηκε το Cover.jpg.");
+            }
+            if (!temporary.renameTo(destination)) throw new IOException("Δεν ολοκληρώθηκε το Cover.jpg.");
+        } finally {
+            if (bitmap != null) bitmap.recycle();
+            if (temporary.exists()) temporary.delete();
+            connection.disconnect();
+        }
+    }
+
     private static boolean isRetryableYoutubeError(Exception error) {
         String message = error.getMessage();
         if (message == null) return true;
@@ -392,7 +441,7 @@ public final class DownloadService extends Service {
     }
 
     private void scan(File directory) {
-        File[] files = directory.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".mp3"));
+        File[] files = directory.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".mp3") || name.equalsIgnoreCase("Cover.jpg"));
         if (files == null) return;
         String[] paths = new String[files.length];
         for (int i = 0; i < files.length; i++) paths[i] = files[i].getAbsolutePath();

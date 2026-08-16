@@ -31,6 +31,7 @@ public final class SpotifyEmbedParserTest {
     @Test public void parsesAlbumTrackListFromCurrentEmbedPayload() throws Exception {
         String json = "{\"props\":{\"pageProps\":{\"state\":{\"data\":{\"entity\":{" +
                 "\"type\":\"album\",\"title\":\"An Album\",\"subtitle\":\"An Artist\"," +
+                "\"images\":[{\"url\":\"https://i.scdn.co/image/cover\"}]," +
                 "\"trackList\":[{\"title\":\"First\",\"subtitle\":\"An Artist\"}," +
                 "{\"title\":\"Second\",\"subtitle\":\"Guest\"}]" +
                 "}}}}}}";
@@ -42,5 +43,6 @@ public final class SpotifyEmbedParserTest {
         assertEquals(2, result.tracks().size());
         assertEquals("Second", result.tracks().get(1).title());
         assertEquals("Guest", result.tracks().get(1).artist());
+        assertEquals("https://i.scdn.co/image/cover", result.coverUrl());
     }
 }

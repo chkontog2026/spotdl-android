@@ -11,6 +11,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -18,7 +19,7 @@ import java.util.regex.Pattern;
 
 final class SpotifyEmbedParser {
     record Track(String title, String artist) {}
-    record Collection(String title, String artist, List<Track> tracks) {}
+    record Collection(String title, String artist, List<Track> tracks, String coverUrl) {}
 
     private static final Pattern SPOTIFY_URL = Pattern.compile(
             "https?://open\\.spotify\\.com/(?:intl-[a-z]{2}/)?(album|track|playlist)/([A-Za-z0-9]+)",
@@ -47,31 +48,40 @@ final class SpotifyEmbedParser {
 
         String title = type.equals("track") ? "Spotify Track" : "Spotify " + type;
         String artist = "";
+        String coverUrl = "";
         Matcher data = NEXT_DATA.matcher(html);
         if (data.find()) {
             Collection embedded = parseNextData(data.group(1), type);
             title = embedded.title();
             artist = embedded.artist();
+            coverUrl = embedded.coverUrl();
             if (!embedded.tracks().isEmpty()) {
                 tracks.clear();
                 tracks.addAll(embedded.tracks());
             }
         }
 
-        if (tracks.isEmpty()) {
-            String oembed = get("https://open.spotify.com/oembed?url=" +
-                    java.net.URLEncoder.encode("https://open.spotify.com/" + type + "/" + id, "UTF-8"));
-            JSONObject metadata = new JSONObject(oembed);
-            String display = metadata.optString("title", "").trim();
-            if (!display.isEmpty()) {
-                String[] parts = display.split(" - ", 2);
-                title = parts[0];
-                artist = parts.length > 1 ? parts[1] : "";
-                tracks.add(new Track(title, artist));
+        if (tracks.isEmpty() || coverUrl.isBlank()) {
+            try {
+                String oembed = get("https://open.spotify.com/oembed?url=" +
+                        java.net.URLEncoder.encode("https://open.spotify.com/" + type + "/" + id, "UTF-8"));
+                JSONObject metadata = new JSONObject(oembed);
+                if (coverUrl.isBlank()) coverUrl = metadata.optString("thumbnail_url", "").trim();
+                if (tracks.isEmpty()) {
+                    String display = metadata.optString("title", "").trim();
+                    if (!display.isEmpty()) {
+                        String[] parts = display.split(" - ", 2);
+                        title = parts[0];
+                        artist = parts.length > 1 ? parts[1] : "";
+                        tracks.add(new Track(title, artist));
+                    }
+                }
+            } catch (Exception error) {
+                if (tracks.isEmpty()) throw error;
             }
         }
         if (tracks.isEmpty()) throw new IllegalStateException("Δεν βρέθηκαν κομμάτια στη δημόσια σελίδα Spotify.");
-        return new Collection(safeName(title), artist, tracks);
+        return new Collection(safeName(title), artist, tracks, coverUrl);
     }
 
     static Collection parseNextData(String rawJson, String fallbackType) throws Exception {
@@ -81,7 +91,7 @@ final class SpotifyEmbedParser {
         JSONObject stateData = state == null ? null : state.optJSONObject("data");
         JSONObject entity = stateData == null ? null : stateData.optJSONObject("entity");
         if (entity == null) {
-            return new Collection("Spotify " + fallbackType, "", List.of());
+            return new Collection("Spotify " + fallbackType, "", List.of(), "");
         }
 
         String title = firstNonBlank(
@@ -105,7 +115,43 @@ final class SpotifyEmbedParser {
             if (artist.isBlank()) artist = artistNames(entity.optJSONArray("artists"));
             tracks.add(new Track(title, artist));
         }
-        return new Collection(safeName(title), artist, tracks);
+        return new Collection(safeName(title), artist, tracks, findCoverUrl(entity));
+    }
+
+    private static String findCoverUrl(JSONObject entity) {
+        String[] fields = {"coverArt", "cover", "image", "images", "visualIdentity", "imageUrl", "thumbnail_url"};
+        for (String field : fields) {
+            String url = findImageUrl(entity.opt(field));
+            if (!url.isBlank()) return url;
+        }
+        return "";
+    }
+
+    private static String findImageUrl(Object value) {
+        if (value instanceof String string) {
+            String trimmed = string.trim();
+            return trimmed.startsWith("http://") || trimmed.startsWith("https://") ? trimmed : "";
+        }
+        if (value instanceof JSONObject object) {
+            String direct = firstNonBlank(
+                    object.optString("url", ""),
+                    object.optString("src", ""),
+                    object.optString("imageUrl", "")
+            );
+            if (direct.startsWith("http://") || direct.startsWith("https://")) return direct;
+            Iterator<String> keys = object.keys();
+            while (keys.hasNext()) {
+                String url = findImageUrl(object.opt(keys.next()));
+                if (!url.isBlank()) return url;
+            }
+        }
+        if (value instanceof JSONArray array) {
+            for (int i = 0; i < array.length(); i++) {
+                String url = findImageUrl(array.opt(i));
+                if (!url.isBlank()) return url;
+            }
+        }
+        return "";
     }
 
     private static String artistNames(JSONArray artists) {
