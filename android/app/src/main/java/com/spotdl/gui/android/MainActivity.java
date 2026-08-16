@@ -4,6 +4,7 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.DownloadManager;
+import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -42,6 +43,7 @@ public final class MainActivity extends Activity {
     private TextView folderStatus;
     private Button folderButton;
     private Button resetFolderButton;
+    private Button openFolderButton;
     private boolean downloading;
 
     private final BroadcastReceiver updates = new BroadcastReceiver() {
@@ -56,6 +58,7 @@ public final class MainActivity extends Activity {
                 downloadButton.setEnabled(true);
                 folderButton.setEnabled(true);
                 resetFolderButton.setEnabled(true);
+                openFolderButton.setEnabled(true);
                 cancelButton.setVisibility(View.GONE);
                 Toast.makeText(
                         MainActivity.this,
@@ -210,6 +213,12 @@ public final class MainActivity extends Activity {
             Toast.makeText(this, "Οι λήψεις θα αποθηκεύονται στο Downloads/SpotDL Android.", Toast.LENGTH_LONG).show();
         });
         root.addView(resetFolderButton, margins(-1, dp(44), 0, 0, 0, 15));
+
+        openFolderButton = new Button(this);
+        openFolderButton.setText("ΑΝΟΙΓΜΑ ΦΑΚΕΛΟΥ");
+        openFolderButton.setTextSize(12);
+        openFolderButton.setOnClickListener(v -> openDownloadFolder());
+        root.addView(openFolderButton, margins(-1, dp(44), 0, 0, 0, 15));
         updateFolderUi();
 
         downloadButton = new Button(this);
@@ -270,6 +279,7 @@ public final class MainActivity extends Activity {
         downloadButton.setEnabled(false);
         folderButton.setEnabled(false);
         resetFolderButton.setEnabled(false);
+        openFolderButton.setEnabled(false);
         cancelButton.setVisibility(View.VISIBLE);
         progressBar.setProgress(0);
         statusText.setText("Εκκίνηση μηχανής λήψης…");
@@ -287,6 +297,14 @@ public final class MainActivity extends Activity {
                 .addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                 .addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
         startActivityForResult(picker, REQUEST_DOWNLOAD_FOLDER);
+    }
+
+    private void openDownloadFolder() {
+        try {
+            startActivity(DownloadFolderStore.openFolderIntent(this));
+        } catch (ActivityNotFoundException error) {
+            Toast.makeText(this, "Δεν βρέθηκε εφαρμογή για άνοιγμα φακέλων.", Toast.LENGTH_LONG).show();
+        }
     }
 
     private void updateFolderUi() {

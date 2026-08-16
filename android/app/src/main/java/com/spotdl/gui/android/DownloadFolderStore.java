@@ -45,6 +45,27 @@ final class DownloadFolderStore {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply();
     }
 
+    static Intent openFolderIntent(Context context) {
+        Uri folder = selectedTree(context);
+        if (folder != null) {
+            folder = DocumentsContract.buildDocumentUriUsingTree(
+                    folder,
+                    DocumentsContract.getTreeDocumentId(folder)
+            );
+        } else {
+            folder = DocumentsContract.buildDocumentUri(
+                    "com.android.externalstorage.documents",
+                    "primary:Download/SpotDL Android"
+            );
+        }
+        return new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                .putExtra(DocumentsContract.EXTRA_INITIAL_URI, folder)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                .addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                .addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+    }
+
     static Uri selectedTree(Context context) {
         Uri selected = rawSelection(context);
         if (selected == null) return null;
