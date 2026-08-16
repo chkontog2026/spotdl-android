@@ -13,10 +13,10 @@ if not exist "android\gradlew.bat" (
 call "android\gradlew.bat" -p android testDebugUnitTest assembleRelease
 if errorlevel 1 exit /b %errorlevel%
 if not exist "android-releases" mkdir "android-releases"
-copy /y "android\app\build\outputs\apk\release\app-universal-release.apk" "android-releases\SpotDL_Android_Universal_v1.1.5.apk" >nul
+copy /y "android\app\build\outputs\apk\release\app-universal-release.apk" "android-releases\SpotDL_Android_Universal_v1.1.6.apk" >nul
 copy /y "android\app\build\outputs\apk\release\app-arm64-v8a-release.apk" "android-releases\SpotDL_Android_ARM64.apk" >nul
-copy /y "android\app\build\outputs\apk\release\app-arm64-v8a-release.apk" "android-releases\SpotDL_Android_ARM64_v1.1.5.apk" >nul
+copy /y "android\app\build\outputs\apk\release\app-arm64-v8a-release.apk" "android-releases\SpotDL_Android_ARM64_v1.1.6.apk" >nul
 echo.
-echo APK ready: android-releases\SpotDL_Android_ARM64_v1.1.5.apk
-echo Universal fallback: android-releases\SpotDL_Android_Universal_v1.1.5.apk
+echo APK ready: android-releases\SpotDL_Android_ARM64_v1.1.6.apk
+echo Universal fallback: android-releases\SpotDL_Android_Universal_v1.1.6.apk
 endlocal

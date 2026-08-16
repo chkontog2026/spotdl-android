@@ -7,7 +7,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.media.MediaScannerConnection;
-import android.os.Environment;
+import android.net.Uri;
 import android.os.IBinder;
 
 import com.yausername.youtubedl_android.YoutubeDL;
@@ -90,8 +90,9 @@ public final class DownloadService extends Service {
                 tracks.add(new SpotifyEmbedParser.Track("%(title)s", ""));
             }
 
-            File root = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "SpotDL Android");
-            File output = new File(root, SpotifyEmbedParser.safeName(folderName));
+            Uri customTree = DownloadFolderStore.selectedTree(this);
+            boolean customFolder = customTree != null;
+            File output = DownloadFolderStore.outputDirectory(this, folderName, customFolder);
             if (!output.exists() && !output.mkdirs()) throw new IllegalStateException("Δεν δημιουργήθηκε ο φάκελος λήψης.");
 
             boolean spotify = SpotifyEmbedParser.isSpotify(url);
@@ -155,9 +156,19 @@ public final class DownloadService extends Service {
                 failures = remaining;
             }
 
-            scan(output);
+            String destination;
+            if (customFolder && containsMp3(output)) {
+                sendProgress(99, "Αποθήκευση MP3 στον επιλεγμένο φάκελο…", false, false);
+                destination = DownloadFolderStore.deliverToSelection(this, customTree, output, folderName);
+            } else if (customFolder) {
+                DownloadFolderStore.discardEmptyStaging(this, output);
+                destination = DownloadFolderStore.selectionLabel(this) + "/" + SpotifyEmbedParser.safeName(folderName);
+            } else {
+                scan(output);
+                destination = "Downloads/SpotDL Android/" + output.getName();
+            }
             if (failures.isEmpty()) {
-                sendProgress(100, "Ολοκληρώθηκε — Αρχεία: Downloads/SpotDL Android/" + output.getName(), true, false);
+                sendProgress(100, "Ολοκληρώθηκε — Αρχεία: " + destination, true, false);
             } else {
                 sendProgress(100, failureSummary(failures), true, true);
             }
@@ -356,6 +367,11 @@ public final class DownloadService extends Service {
         String[] paths = new String[files.length];
         for (int i = 0; i < files.length; i++) paths[i] = files[i].getAbsolutePath();
         MediaScannerConnection.scanFile(this, paths, null, null);
+    }
+
+    private static boolean containsMp3(File directory) {
+        File[] files = directory.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".mp3"));
+        return files != null && files.length > 0;
     }
 
     private void sendProgress(int progress, String status, boolean done, boolean failed) {

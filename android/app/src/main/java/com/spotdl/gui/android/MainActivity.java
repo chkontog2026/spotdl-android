@@ -12,6 +12,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
@@ -28,12 +29,17 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 public final class MainActivity extends Activity {
+    private static final int REQUEST_DOWNLOAD_FOLDER = 20;
+
     private EditText urlInput;
     private Spinner qualityInput;
     private Button downloadButton;
     private Button cancelButton;
     private ProgressBar progressBar;
     private TextView statusText;
+    private TextView folderStatus;
+    private Button folderButton;
+    private Button resetFolderButton;
     private boolean downloading;
 
     private final BroadcastReceiver updates = new BroadcastReceiver() {
@@ -46,6 +52,8 @@ public final class MainActivity extends Activity {
             if (done) {
                 downloading = false;
                 downloadButton.setEnabled(true);
+                folderButton.setEnabled(true);
+                resetFolderButton.setEnabled(true);
                 cancelButton.setVisibility(View.GONE);
                 Toast.makeText(
                         MainActivity.this,
@@ -80,6 +88,20 @@ public final class MainActivity extends Activity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         acceptSharedText(intent);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQUEST_DOWNLOAD_FOLDER || resultCode != RESULT_OK || data == null) return;
+        Uri treeUri = data.getData();
+        if (treeUri == null) return;
+        try {
+            DownloadFolderStore.saveSelection(this, treeUri, data.getFlags());
+            updateFolderUi();
+            Toast.makeText(this, "Ο φάκελος λήψεων αποθηκεύτηκε μόνιμα.", Toast.LENGTH_LONG).show();
+        } catch (Exception error) {
+            Toast.makeText(this, "Δεν αποθηκεύτηκε η πρόσβαση στον φάκελο.", Toast.LENGTH_LONG).show();
+        }
     }
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -145,7 +167,30 @@ public final class MainActivity extends Activity {
         qualityInput.setBackground(rounded(Color.WHITE, 13));
         String[] qualities = {"Υψηλή · V0 (~245 kbps)", "Ισορροπημένη · V2 (~190 kbps)", "Μικρό μέγεθος · V5 (~130 kbps)"};
         qualityInput.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, qualities));
-        root.addView(qualityInput, margins(-1, dp(56), 0, 0, 0, 18));
+        root.addView(qualityInput, margins(-1, dp(56), 0, 0, 0, 15));
+
+        root.addView(text("ΦΑΚΕΛΟΣ ΛΗΨΕΩΝ", 12, Color.rgb(96, 112, 128), Typeface.BOLD), margins(-1, -2, 0, 0, 0, 7));
+        folderStatus = text("", 13, Color.rgb(7, 29, 49), Typeface.NORMAL);
+        folderStatus.setPadding(dp(16), dp(13), dp(16), dp(13));
+        folderStatus.setBackground(rounded(Color.WHITE, 13));
+        root.addView(folderStatus, margins(-1, -2, 0, 0, 0, 8));
+
+        folderButton = new Button(this);
+        folderButton.setText("ΑΛΛΑΓΗ ΦΑΚΕΛΟΥ");
+        folderButton.setTextSize(12);
+        folderButton.setOnClickListener(v -> chooseDownloadFolder());
+        root.addView(folderButton, margins(-1, dp(46), 0, 0, 0, 6));
+
+        resetFolderButton = new Button(this);
+        resetFolderButton.setText("ΧΡΗΣΗ ΠΡΟΕΠΙΛΟΓΗΣ");
+        resetFolderButton.setTextSize(12);
+        resetFolderButton.setOnClickListener(v -> {
+            DownloadFolderStore.useDefault(this);
+            updateFolderUi();
+            Toast.makeText(this, "Οι λήψεις θα αποθηκεύονται στο Downloads/SpotDL Android.", Toast.LENGTH_LONG).show();
+        });
+        root.addView(resetFolderButton, margins(-1, dp(44), 0, 0, 0, 15));
+        updateFolderUi();
 
         downloadButton = new Button(this);
         downloadButton.setText("↓  ΛΗΨΗ ΣΤΟ ΚΙΝΗΤΟ");
@@ -168,7 +213,7 @@ public final class MainActivity extends Activity {
         progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progressBar.setMax(100);
         root.addView(progressBar, margins(-1, dp(7), 0, 0, 0, 10));
-        statusText = text("Έτοιμο. Τα MP3 αποθηκεύονται στο Downloads/SpotDL Android.", 13, Color.rgb(96, 112, 128), Typeface.NORMAL);
+        statusText = text("Έτοιμο για λήψη.", 13, Color.rgb(96, 112, 128), Typeface.NORMAL);
         root.addView(statusText);
 
         TextView updateStatus = text(
@@ -197,6 +242,8 @@ public final class MainActivity extends Activity {
         }
         downloading = true;
         downloadButton.setEnabled(false);
+        folderButton.setEnabled(false);
+        resetFolderButton.setEnabled(false);
         cancelButton.setVisibility(View.VISIBLE);
         progressBar.setProgress(0);
         statusText.setText("Εκκίνηση μηχανής λήψης…");
@@ -205,6 +252,24 @@ public final class MainActivity extends Activity {
                 .putExtra(DownloadService.EXTRA_URL, url)
                 .putExtra(DownloadService.EXTRA_QUALITY, values[qualityInput.getSelectedItemPosition()]);
         startForegroundService(service);
+    }
+
+    private void chooseDownloadFolder() {
+        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                .addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                .addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+        startActivityForResult(picker, REQUEST_DOWNLOAD_FOLDER);
+    }
+
+    private void updateFolderUi() {
+        if (folderStatus == null || resetFolderButton == null) return;
+        boolean custom = DownloadFolderStore.selectedTree(this) != null;
+        folderStatus.setText(custom
+                ? "Επιλεγμένος: " + DownloadFolderStore.selectionLabel(this) + "\nΤα album αποθηκεύονται σε υποφακέλους."
+                : "Προεπιλογή: Downloads/SpotDL Android");
+        resetFolderButton.setVisibility(custom ? View.VISIBLE : View.GONE);
     }
 
     private void acceptSharedText(Intent intent) {
