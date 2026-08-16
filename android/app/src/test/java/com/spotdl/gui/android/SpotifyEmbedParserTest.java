@@ -5,6 +5,17 @@ import static org.junit.Assert.assertEquals;
 import org.junit.Test;
 
 public final class SpotifyEmbedParserTest {
+    @Test public void createsStableSpotifyTrackFileNames() {
+        assertEquals(
+                "03 - Daphne Lawrence - Gata.%(ext)s",
+                SpotifyEmbedParser.trackFileName(2, new SpotifyEmbedParser.Track("Gata", "Daphne Lawrence"))
+        );
+        assertEquals(
+                "01 - 100%% Agapi.%(ext)s",
+                SpotifyEmbedParser.trackFileName(0, new SpotifyEmbedParser.Track("100% Agapi", ""))
+        );
+    }
+
     @Test public void parsesTrackArtistFromCurrentEmbedPayload() throws Exception {
         String json = "{\"props\":{\"pageProps\":{\"state\":{\"data\":{\"entity\":{" +
                 "\"type\":\"track\",\"name\":\"Liomeno Pagoto\",\"artists\":[{\"name\":\"Xilina Spathia\"}]" +

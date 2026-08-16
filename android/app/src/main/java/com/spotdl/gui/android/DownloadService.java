@@ -24,6 +24,16 @@ import java.util.concurrent.Executors;
 import kotlin.Unit;
 
 public final class DownloadService extends Service {
+    private record TrackDownload(
+            int index,
+            SpotifyEmbedParser.Track track,
+            String source,
+            String outputTemplate,
+            String label
+    ) {}
+
+    private record TrackFailure(TrackDownload download, String reason) {}
+
     static final String ACTION_PROGRESS = "com.spotdl.gui.android.PROGRESS";
     static final String ACTION_CANCEL = "com.spotdl.gui.android.CANCEL";
     static final String EXTRA_URL = "url";
@@ -84,23 +94,73 @@ public final class DownloadService extends Service {
             File output = new File(root, SpotifyEmbedParser.safeName(folderName));
             if (!output.exists() && !output.mkdirs()) throw new IllegalStateException("Δεν δημιουργήθηκε ο φάκελος λήψης.");
 
+            boolean spotify = SpotifyEmbedParser.isSpotify(url);
+            List<TrackFailure> failures = new ArrayList<>();
             for (int index = 0; index < tracks.size(); index++) {
                 if (cancelled) return;
                 SpotifyEmbedParser.Track track = tracks.get(index);
-                final int current = index;
                 String label = track.artist().isBlank() ? track.title() : track.artist() + " — " + track.title();
-                String source = SpotifyEmbedParser.isSpotify(url)
+                String source = spotify
                         ? "ytsearch1:" + searchTerms(track) + " official audio"
                         : url;
-                String prefix = SpotifyEmbedParser.isSpotify(url) ? String.format(Locale.ROOT, "%02d - ", index + 1) : "";
-                String outputTemplate = new File(output, prefix + "%(title)s.%(ext)s").getAbsolutePath();
+                String fileName = spotify
+                        ? SpotifyEmbedParser.trackFileName(index, track)
+                        : "%(title)s.%(ext)s";
+                TrackDownload download = new TrackDownload(
+                        index,
+                        track,
+                        source,
+                        new File(output, fileName).getAbsolutePath(),
+                        label
+                );
+                int progressStart = (index * 90) / tracks.size();
+                int progressEnd = ((index + 1) * 90) / tracks.size();
 
-                sendProgress((index * 100) / tracks.size(), "Λήψη " + (index + 1) + "/" + tracks.size() + ": " + label, false, false);
-                executeWithFallback(source, quality, outputTemplate, current, tracks.size(), label);
+                sendProgress(progressStart, "Λήψη " + (index + 1) + "/" + tracks.size() + ": " + label, false, false);
+                try {
+                    executeWithFallback(download, quality, tracks.size(), progressStart, progressEnd);
+                } catch (Exception error) {
+                    if (cancelled) return;
+                    failures.add(new TrackFailure(download, readable(error)));
+                    sendProgress(
+                            progressEnd,
+                            "Προσωρινή αποτυχία στο " + (index + 1) + " — συνέχεια στα υπόλοιπα…",
+                            false,
+                            false
+                    );
+                }
+            }
+
+            if (!failures.isEmpty() && !cancelled) {
+                List<TrackFailure> remaining = new ArrayList<>();
+                int retryTotal = failures.size();
+                for (int retryIndex = 0; retryIndex < retryTotal; retryIndex++) {
+                    if (cancelled) return;
+                    TrackDownload retry = failures.get(retryIndex).download();
+                    int progressStart = 90 + (retryIndex * 9) / retryTotal;
+                    int progressEnd = 90 + ((retryIndex + 1) * 9) / retryTotal;
+                    sendProgress(
+                            progressStart,
+                            "Επανάληψη " + (retryIndex + 1) + "/" + retryTotal + ": " + retry.label(),
+                            false,
+                            false
+                    );
+                    try {
+                        executeWithFallback(retry, quality, tracks.size(), progressStart, progressEnd);
+                    } catch (Exception error) {
+                        if (cancelled) return;
+                        remaining.add(new TrackFailure(retry, readable(error)));
+                    }
+                }
+                failures = remaining;
             }
 
             scan(output);
-            sendProgress(100, "Ολοκληρώθηκε — Αρχεία: Downloads/SpotDL Android/" + output.getName(), true, false);
+            if (failures.isEmpty()) {
+                sendProgress(100, "Ολοκληρώθηκε — Αρχεία: Downloads/SpotDL Android/" + output.getName(), true, false);
+            } else {
+                sendProgress(100, failureSummary(failures), true, true);
+            }
         } catch (Exception error) {
             String message = error.getLocalizedMessage();
             if (message == null || message.isBlank()) message = error.getClass().getSimpleName();
@@ -112,19 +172,21 @@ public final class DownloadService extends Service {
     }
 
     private void executeWithFallback(
-            String source,
+            TrackDownload download,
             String quality,
-            String outputTemplate,
-            int current,
             int totalTracks,
-            String label
+            int progressStart,
+            int progressEnd
     ) throws Exception {
+        String source = download.source();
         if (!isYoutubeSource(source)) {
             executeRequest(
-                    buildRequest(source, quality, outputTemplate, null, false),
-                    current,
+                    buildRequest(source, quality, download.outputTemplate(), null, false),
+                    download.index(),
                     totalTracks,
-                    label
+                    download.label(),
+                    progressStart,
+                    progressEnd
             );
             return;
         }
@@ -133,14 +195,14 @@ public final class DownloadService extends Service {
             executeRequest(buildRequest(
                     source,
                     quality,
-                    outputTemplate,
+                    download.outputTemplate(),
                     null,
                     false
-            ), current, totalTracks, label);
+            ), download.index(), totalTracks, download.label(), progressStart, progressEnd);
         } catch (YoutubeDLException firstError) {
             if (cancelled || !isRetryableYoutubeError(firstError)) throw firstError;
             sendProgress(
-                    Math.max(1, (current * 100) / totalTracks),
+                    Math.max(1, progressStart),
                     "Η σύνδεση απορρίφθηκε — νέα προσπάθεια μέσω IPv4…",
                     false,
                     false
@@ -149,14 +211,14 @@ public final class DownloadService extends Service {
                 executeRequest(buildRequest(
                         source,
                         quality,
-                        outputTemplate,
+                        download.outputTemplate(),
                         null,
                         true
-                ), current, totalTracks, label);
+                ), download.index(), totalTracks, download.label(), progressStart, progressEnd);
             } catch (YoutubeDLException secondError) {
                 if (cancelled || !isRetryableYoutubeError(secondError)) throw secondError;
                 sendProgress(
-                        Math.max(1, (current * 100) / totalTracks),
+                        Math.max(1, progressStart),
                         "Δοκιμή τελευταίας εναλλακτικής σύνδεσης…",
                         false,
                         false
@@ -164,10 +226,10 @@ public final class DownloadService extends Service {
                 executeRequest(buildRequest(
                         source,
                         quality,
-                        outputTemplate,
+                        download.outputTemplate(),
                         FALLBACK_YOUTUBE_CLIENT,
                         true
-                ), current, totalTracks, label);
+                ), download.index(), totalTracks, download.label(), progressStart, progressEnd);
             }
         }
     }
@@ -206,10 +268,12 @@ public final class DownloadService extends Service {
             YoutubeDLRequest request,
             int current,
             int totalTracks,
-            String label
+            String label,
+            int progressStart,
+            int progressEnd
     ) throws Exception {
         YoutubeDL.getInstance().execute(request, PROCESS_ID, (progress, eta, line) -> {
-            int total = Math.min(99, (int) (((current + progress / 100f) / totalTracks) * 100));
+            int total = Math.min(99, progressStart + Math.round((progress / 100f) * (progressEnd - progressStart)));
             sendProgress(total, "Λήψη " + (current + 1) + "/" + totalTracks + ": " + label, false, false);
             return Unit.INSTANCE;
         });
@@ -237,6 +301,27 @@ public final class DownloadService extends Service {
                 || normalized.contains("requested format is not available")
                 || normalized.contains("no video formats")
                 || normalized.contains("no formats");
+    }
+
+    private static String failureSummary(List<TrackFailure> failures) {
+        StringBuilder summary = new StringBuilder("Ολοκληρώθηκε με ")
+                .append(failures.size())
+                .append(failures.size() == 1 ? " αποτυχία: " : " αποτυχίες: ");
+        int shown = Math.min(5, failures.size());
+        for (int i = 0; i < shown; i++) {
+            if (i > 0) summary.append(" · ");
+            TrackFailure failure = failures.get(i);
+            summary.append(String.format(Locale.ROOT, "%02d", failure.download().index() + 1))
+                    .append(" ")
+                    .append(failure.download().track().title());
+        }
+        if (failures.size() > shown) summary.append(" · +").append(failures.size() - shown).append(" ακόμη");
+        return summary.toString();
+    }
+
+    private static String readable(Exception error) {
+        String message = error.getLocalizedMessage();
+        return message == null || message.isBlank() ? error.getClass().getSimpleName() : message;
     }
 
     private void waitForEngine() throws Exception {

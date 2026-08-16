@@ -154,4 +154,11 @@ final class SpotifyEmbedParser {
         String safe = value.replaceAll("[\\\\/:*?\"<>|]", "_").replaceAll("\\s+", " ").trim();
         return safe.isEmpty() ? "SpotDL Download" : safe;
     }
+
+    static String trackFileName(int index, Track track) {
+        String title = track.title().isBlank() ? "Άγνωστο κομμάτι" : track.title();
+        String stem = track.artist().isBlank() ? title : track.artist() + " - " + title;
+        String escapedStem = safeName(stem).replace("%", "%%");
+        return String.format(Locale.ROOT, "%02d - %s.%%(ext)s", index + 1, escapedStem);
+    }
 }

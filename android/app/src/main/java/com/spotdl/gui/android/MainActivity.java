@@ -47,7 +47,11 @@ public final class MainActivity extends Activity {
                 downloading = false;
                 downloadButton.setEnabled(true);
                 cancelButton.setVisibility(View.GONE);
-                Toast.makeText(MainActivity.this, failed ? "Η λήψη απέτυχε" : "Η λήψη ολοκληρώθηκε", Toast.LENGTH_LONG).show();
+                Toast.makeText(
+                        MainActivity.this,
+                        failed ? "Η λήψη ολοκληρώθηκε με παραλείψεις" : "Η λήψη ολοκληρώθηκε",
+                        Toast.LENGTH_LONG
+                ).show();
             }
         }
     };
