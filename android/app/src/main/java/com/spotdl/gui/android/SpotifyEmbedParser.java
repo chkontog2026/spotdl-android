@@ -157,8 +157,7 @@ final class SpotifyEmbedParser {
 
     static String trackFileName(int index, Track track) {
         String title = track.title().isBlank() ? "Άγνωστο κομμάτι" : track.title();
-        String stem = track.artist().isBlank() ? title : track.artist() + " - " + title;
-        String escapedStem = safeName(stem).replace("%", "%%");
-        return String.format(Locale.ROOT, "%02d - %s.%%(ext)s", index + 1, escapedStem);
+        String escapedStem = safeName(title).replaceAll("\\s+", "_").replace("%", "%%");
+        return String.format(Locale.ROOT, "%02d.%s.%%(ext)s", index + 1, escapedStem);
     }
 }

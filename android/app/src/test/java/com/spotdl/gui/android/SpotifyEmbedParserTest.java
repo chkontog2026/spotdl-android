@@ -7,11 +7,11 @@ import org.junit.Test;
 public final class SpotifyEmbedParserTest {
     @Test public void createsStableSpotifyTrackFileNames() {
         assertEquals(
-                "03 - Daphne Lawrence - Gata.%(ext)s",
+                "03.Gata.%(ext)s",
                 SpotifyEmbedParser.trackFileName(2, new SpotifyEmbedParser.Track("Gata", "Daphne Lawrence"))
         );
         assertEquals(
-                "01 - 100%% Agapi.%(ext)s",
+                "01.100%%_Agapi.%(ext)s",
                 SpotifyEmbedParser.trackFileName(0, new SpotifyEmbedParser.Track("100% Agapi", ""))
         );
     }
