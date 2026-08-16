@@ -15,11 +15,16 @@ import com.yausername.youtubedl_android.YoutubeDLException;
 import com.yausername.youtubedl_android.YoutubeDLRequest;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import kotlin.Unit;
 
@@ -48,9 +53,11 @@ public final class DownloadService extends Service {
     private static final String ENGINE_PREFS = "download_engine";
     private static final String LAST_ENGINE_UPDATE = "last_nightly_update_ms";
     private static final long ENGINE_UPDATE_INTERVAL_MS = 12L * 60L * 60L * 1000L;
+    private static final long TRACK_TIMEOUT_MS = 8L * 60L * 1000L;
     private static final String FALLBACK_YOUTUBE_CLIENT = "android_vr";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService commandExecutor = Executors.newSingleThreadExecutor();
     private volatile boolean cancelled;
 
     @Override public void onCreate() {
@@ -283,11 +290,34 @@ public final class DownloadService extends Service {
             int progressStart,
             int progressEnd
     ) throws Exception {
-        YoutubeDL.getInstance().execute(request, PROCESS_ID, (progress, eta, line) -> {
-            int total = Math.min(99, progressStart + Math.round((progress / 100f) * (progressEnd - progressStart)));
-            sendProgress(total, "Λήψη " + (current + 1) + "/" + totalTracks + ": " + label, false, false);
-            return Unit.INSTANCE;
+        Future<Void> execution = commandExecutor.submit(() -> {
+            YoutubeDL.getInstance().execute(request, PROCESS_ID, (progress, eta, line) -> {
+                int total = Math.min(99, progressStart + Math.round((progress / 100f) * (progressEnd - progressStart)));
+                sendProgress(total, "Λήψη " + (current + 1) + "/" + totalTracks + ": " + label, false, false);
+                return Unit.INSTANCE;
+            });
+            return null;
         });
+        try {
+            execution.get(TRACK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            destroyDownloadProcess();
+            throw error;
+        } catch (TimeoutException error) {
+            execution.cancel(true);
+            destroyDownloadProcess();
+            throw new IOException("Η λήψη του τραγουδιού ξεπέρασε τα 8 λεπτά.", error);
+        } catch (ExecutionException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof Exception exception) throw exception;
+            if (cause instanceof Error failure) throw failure;
+            throw new IllegalStateException(cause);
+        }
+    }
+
+    private void destroyDownloadProcess() {
+        try { YoutubeDL.getInstance().destroyProcessById(PROCESS_ID); } catch (Exception ignored) {}
     }
 
     private static String searchTerms(SpotifyEmbedParser.Track track) {
@@ -404,6 +434,7 @@ public final class DownloadService extends Service {
 
     @Override public void onDestroy() {
         executor.shutdownNow();
+        commandExecutor.shutdownNow();
         super.onDestroy();
     }
 
