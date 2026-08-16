@@ -36,9 +36,8 @@ public final class DownloadService extends Service {
     private static final int NOTIFICATION_ID = 41;
     private static final String PROCESS_ID = "spotdl-android-download";
     private static final String ENGINE_PREFS = "download_engine";
-    private static final String LAST_ENGINE_UPDATE = "last_update_ms";
+    private static final String LAST_ENGINE_UPDATE = "last_nightly_update_ms";
     private static final long ENGINE_UPDATE_INTERVAL_MS = 12L * 60L * 60L * 1000L;
-    private static final String PRIMARY_YOUTUBE_CLIENT = "web_embedded";
     private static final String FALLBACK_YOUTUBE_CLIENT = "android_vr";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -120,28 +119,56 @@ public final class DownloadService extends Service {
             int totalTracks,
             String label
     ) throws Exception {
-        boolean youtube = isYoutubeSource(source);
+        if (!isYoutubeSource(source)) {
+            executeRequest(
+                    buildRequest(source, quality, outputTemplate, null, false),
+                    current,
+                    totalTracks,
+                    label
+            );
+            return;
+        }
+
         try {
             executeRequest(buildRequest(
                     source,
                     quality,
                     outputTemplate,
-                    youtube ? PRIMARY_YOUTUBE_CLIENT : null
+                    null,
+                    false
             ), current, totalTracks, label);
         } catch (YoutubeDLException firstError) {
-            if (!youtube || cancelled || !isRetryableYoutubeError(firstError)) throw firstError;
+            if (cancelled || !isRetryableYoutubeError(firstError)) throw firstError;
             sendProgress(
                     Math.max(1, (current * 100) / totalTracks),
-                    "Η πρώτη σύνδεση απορρίφθηκε — δοκιμή εναλλακτικής…",
+                    "Η σύνδεση απορρίφθηκε — νέα προσπάθεια μέσω IPv4…",
                     false,
                     false
             );
-            executeRequest(buildRequest(
-                    source,
-                    quality,
-                    outputTemplate,
-                    FALLBACK_YOUTUBE_CLIENT
-            ), current, totalTracks, label);
+            try {
+                executeRequest(buildRequest(
+                        source,
+                        quality,
+                        outputTemplate,
+                        null,
+                        true
+                ), current, totalTracks, label);
+            } catch (YoutubeDLException secondError) {
+                if (cancelled || !isRetryableYoutubeError(secondError)) throw secondError;
+                sendProgress(
+                        Math.max(1, (current * 100) / totalTracks),
+                        "Δοκιμή τελευταίας εναλλακτικής σύνδεσης…",
+                        false,
+                        false
+                );
+                executeRequest(buildRequest(
+                        source,
+                        quality,
+                        outputTemplate,
+                        FALLBACK_YOUTUBE_CLIENT,
+                        true
+                ), current, totalTracks, label);
+            }
         }
     }
 
@@ -149,7 +176,8 @@ public final class DownloadService extends Service {
             String source,
             String quality,
             String outputTemplate,
-            String youtubeClient
+            String youtubeClient,
+            boolean forceIpv4
     ) {
         YoutubeDLRequest request = new YoutubeDLRequest(source);
         request.addOption("--no-playlist");
@@ -166,6 +194,7 @@ public final class DownloadService extends Service {
         request.addOption("--embed-thumbnail");
         request.addOption("--convert-thumbnails", "jpg");
         request.addOption("--remote-components", "ejs:github");
+        if (forceIpv4) request.addOption("--force-ipv4");
         if (youtubeClient != null) {
             request.addOption("--extractor-args", "youtube:player_client=" + youtubeClient);
         }
@@ -223,7 +252,7 @@ public final class DownloadService extends Service {
         if (System.currentTimeMillis() - lastUpdate < ENGINE_UPDATE_INTERVAL_MS) return;
         sendProgress(1, "Έλεγχος για νέα έκδοση yt-dlp…", false, false);
         try {
-            YoutubeDL.getInstance().updateYoutubeDL(this, YoutubeDL.UpdateChannel._STABLE);
+            YoutubeDL.getInstance().updateYoutubeDL(this, YoutubeDL.UpdateChannel._NIGHTLY);
             getSharedPreferences(ENGINE_PREFS, MODE_PRIVATE)
                     .edit()
                     .putLong(LAST_ENGINE_UPDATE, System.currentTimeMillis())

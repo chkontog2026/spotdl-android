@@ -34,7 +34,6 @@ public final class MainActivity extends Activity {
     private Button cancelButton;
     private ProgressBar progressBar;
     private TextView statusText;
-    private Button updateButton;
     private boolean downloading;
 
     private final BroadcastReceiver updates = new BroadcastReceiver() {
@@ -168,13 +167,16 @@ public final class MainActivity extends Activity {
         statusText = text("Έτοιμο. Τα MP3 αποθηκεύονται στο Downloads/SpotDL Android.", 13, Color.rgb(96, 112, 128), Typeface.NORMAL);
         root.addView(statusText);
 
-        updateButton = new Button(this);
-        updateButton.setText("ΕΛΕΓΧΟΣ ΕΝΗΜΕΡΩΣΕΩΝ  ·  v" + BuildConfig.VERSION_NAME);
-        updateButton.setTextColor(Color.rgb(7, 29, 49));
-        updateButton.setTextSize(12);
-        updateButton.setBackground(rounded(Color.rgb(225, 231, 236), 12));
-        updateButton.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
-        root.addView(updateButton, margins(-1, dp(46), 0, 18, 0, 0));
+        TextView updateStatus = text(
+                "ΑΥΤΟΜΑΤΕΣ ΕΝΗΜΕΡΩΣΕΙΣ ΕΝΕΡΓΕΣ  ·  v" + BuildConfig.VERSION_NAME,
+                12,
+                Color.rgb(7, 29, 49),
+                Typeface.BOLD
+        );
+        updateStatus.setGravity(Gravity.CENTER);
+        updateStatus.setPadding(dp(12), dp(14), dp(12), dp(14));
+        updateStatus.setBackground(rounded(Color.rgb(225, 231, 236), 12));
+        root.addView(updateStatus, margins(-1, -2, 0, 18, 0, 0));
 
         TextView note = text("Χρησιμοποίησέ το μόνο για περιεχόμενο που σου ανήκει ή έχεις άδεια να κατεβάσεις.", 12, Color.rgb(112, 126, 138), Typeface.NORMAL);
         note.setPadding(0, dp(22), 0, 0);

@@ -10,8 +10,8 @@ android {
         applicationId = "com.spotdl.gui.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.1.1"
+        versionCode = 7
+        versionName = "1.1.3"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")

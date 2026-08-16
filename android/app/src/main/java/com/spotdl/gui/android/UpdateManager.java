@@ -66,12 +66,12 @@ final class UpdateManager {
         EXECUTOR.execute(() -> {
             try {
                 Release release = readLatestRelease();
-                prefs.edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply();
                 if (compareVersions(release.version(), BuildConfig.VERSION_NAME) <= 0) {
+                    prefs.edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply();
                     if (manual) onMain(() -> Toast.makeText(activity, "Έχεις ήδη την τελευταία έκδοση.", Toast.LENGTH_LONG).show());
                     return;
                 }
-                onMain(() -> showUpdateDialog(activity, release));
+                onMain(() -> startDownload(activity, release));
             } catch (Exception error) {
                 if (manual) onMain(() -> Toast.makeText(
                         activity,
@@ -131,19 +131,8 @@ final class UpdateManager {
         return apks.size() == 1 ? apks.get(0) : null;
     }
 
-    private static void showUpdateDialog(Activity activity, Release release) {
-        if (activity.isFinishing() || activity.isDestroyed()) return;
-        String notes = release.notes().isBlank() ? "Νέα έκδοση διαθέσιμη." : release.notes().trim();
-        if (notes.length() > 1200) notes = notes.substring(0, 1200) + "…";
-        new AlertDialog.Builder(activity)
-                .setTitle("SpotDL Android " + release.version())
-                .setMessage(notes)
-                .setNegativeButton("ΑΡΓΟΤΕΡΑ", null)
-                .setPositiveButton("ΕΝΗΜΕΡΩΣΗ", (dialog, which) -> startDownload(activity, release))
-                .show();
-    }
-
     private static void startDownload(Activity activity, Release release) {
+        if (activity.isFinishing() || activity.isDestroyed()) return;
         File directory = updateDirectory(activity);
         if (!directory.exists() && !directory.mkdirs()) {
             Toast.makeText(activity, "Δεν δημιουργήθηκε ο φάκελος ενημερώσεων.", Toast.LENGTH_LONG).show();
@@ -161,15 +150,30 @@ final class UpdateManager {
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setAllowedOverMetered(true)
                 .setDestinationUri(Uri.fromFile(destination));
-        long id = activity.getSystemService(DownloadManager.class).enqueue(request);
+        long id;
+        try {
+            id = activity.getSystemService(DownloadManager.class).enqueue(request);
+        } catch (Exception error) {
+            Toast.makeText(
+                    activity,
+                    "Δεν ξεκίνησε η λήψη της ενημέρωσης: " + readable(error),
+                    Toast.LENGTH_LONG
+            ).show();
+            return;
+        }
         prefs(activity).edit()
+                .putLong(KEY_LAST_CHECK, System.currentTimeMillis())
                 .putLong(KEY_DOWNLOAD_ID, id)
                 .putString(KEY_ASSET_NAME, release.assetName())
                 .putString(KEY_DIGEST, release.digest())
                 .putBoolean(KEY_INSTALL_REQUESTED, false)
                 .putBoolean(KEY_PERMISSION_PROMPTED, false)
                 .apply();
-        Toast.makeText(activity, "Η ενημέρωση κατεβαίνει…", Toast.LENGTH_LONG).show();
+        Toast.makeText(
+                activity,
+                "Βρέθηκε η έκδοση " + release.version() + " — η ενημέρωση κατεβαίνει αυτόματα…",
+                Toast.LENGTH_LONG
+        ).show();
     }
 
     static void onDownloadComplete(Activity activity, long id) {
