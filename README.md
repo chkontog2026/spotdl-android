@@ -21,8 +21,8 @@
 
 Δημιουργούνται:
 
-- `android-releases/SpotDL_Android_ARM64_v1.1.7.apk`
-- `android-releases/SpotDL_Android_Universal_v1.1.7.apk`
+- `android-releases/SpotDL_Android_ARM64_v1.1.8.apk`
+- `android-releases/SpotDL_Android_Universal_v1.1.8.apk`
 
 Για να μπορούν να εγκατασταθούν οι επόμενες εκδόσεις ως ενημερώσεις, όλα τα APK πρέπει να υπογράφονται με το ίδιο ιδιωτικό signing key.
 

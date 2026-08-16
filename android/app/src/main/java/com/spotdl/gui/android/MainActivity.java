@@ -5,6 +5,8 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -150,16 +152,34 @@ public final class MainActivity extends Activity {
 
         TextView inputLabel = text("ΣΥΝΔΕΣΜΟΣ", 12, Color.rgb(96, 112, 128), Typeface.BOLD);
         root.addView(inputLabel, margins(-1, -2, 2, 0, 0, 7));
+
+        LinearLayout urlBox = new LinearLayout(this);
+        urlBox.setOrientation(LinearLayout.HORIZONTAL);
+        urlBox.setGravity(Gravity.CENTER_VERTICAL);
+        urlBox.setPadding(dp(4), dp(4), dp(4), dp(4));
+        urlBox.setBackground(rounded(Color.WHITE, 13));
+
         urlInput = new EditText(this);
         urlInput.setHint("https://open.spotify.com/album/…");
         urlInput.setTextSize(15);
         urlInput.setSingleLine(false);
         urlInput.setMinLines(2);
         urlInput.setGravity(Gravity.TOP);
-        urlInput.setPadding(dp(16), dp(14), dp(16), dp(14));
+        urlInput.setPadding(dp(12), dp(10), dp(8), dp(10));
         urlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        urlInput.setBackground(rounded(Color.WHITE, 13));
-        root.addView(urlInput, margins(-1, -2, 0, 0, 0, 15));
+        urlInput.setBackgroundColor(Color.TRANSPARENT);
+        LinearLayout.LayoutParams urlParams = new LinearLayout.LayoutParams(0, -2, 1f);
+        urlBox.addView(urlInput, urlParams);
+
+        Button pasteButton = new Button(this);
+        pasteButton.setText("ΕΠΙΚΟΛΛΗΣΗ");
+        pasteButton.setTextSize(11);
+        pasteButton.setTextColor(Color.rgb(7, 29, 49));
+        pasteButton.setBackground(rounded(Color.rgb(225, 231, 236), 10));
+        pasteButton.setOnClickListener(v -> pasteUrl());
+        urlBox.addView(pasteButton, margins(dp(108), dp(46), 0, 0, 0, 0));
+
+        root.addView(urlBox, margins(-1, -2, 0, 0, 0, 15));
 
         root.addView(text("ΠΟΙΟΤΗΤΑ MP3", 12, Color.rgb(96, 112, 128), Typeface.BOLD), margins(-1, -2, 0, 0, 0, 7));
         qualityInput = new Spinner(this);
@@ -283,6 +303,24 @@ public final class MainActivity extends Activity {
             String shared = intent.getStringExtra(Intent.EXTRA_TEXT);
             if (shared != null && urlInput != null) urlInput.setText(extractUrl(shared));
         }
+    }
+
+    private void pasteUrl() {
+        ClipboardManager clipboard = getSystemService(ClipboardManager.class);
+        ClipData clip = clipboard == null ? null : clipboard.getPrimaryClip();
+        if (clip == null || clip.getItemCount() == 0) {
+            Toast.makeText(this, "Το πρόχειρο είναι κενό.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        CharSequence value = clip.getItemAt(0).coerceToText(this);
+        if (value == null || value.toString().isBlank()) {
+            Toast.makeText(this, "Το πρόχειρο δεν περιέχει κείμενο.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String pasted = extractUrl(value.toString().trim());
+        urlInput.setText(pasted);
+        urlInput.setSelection(pasted.length());
+        urlInput.requestFocus();
     }
 
     private static String extractUrl(String value) {
