@@ -225,7 +225,13 @@ public final class MainActivity extends Activity {
         updateStatus.setGravity(Gravity.CENTER);
         updateStatus.setPadding(dp(12), dp(14), dp(12), dp(14));
         updateStatus.setBackground(rounded(Color.rgb(225, 231, 236), 12));
-        root.addView(updateStatus, margins(-1, -2, 0, 18, 0, 0));
+        root.addView(updateStatus, margins(-1, -2, 0, 18, 0, 8));
+
+        Button checkUpdatesButton = new Button(this);
+        checkUpdatesButton.setText("ΕΛΕΓΧΟΣ ΕΝΗΜΕΡΩΣΗΣ ΤΩΡΑ");
+        checkUpdatesButton.setTextSize(12);
+        checkUpdatesButton.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
+        root.addView(checkUpdatesButton, margins(-1, dp(44), 0, 0, 0, 0));
 
         TextView note = text("Χρησιμοποίησέ το μόνο για περιεχόμενο που σου ανήκει ή έχεις άδεια να κατεβάσεις.", 12, Color.rgb(112, 126, 138), Typeface.NORMAL);
         note.setPadding(0, dp(22), 0, 0);

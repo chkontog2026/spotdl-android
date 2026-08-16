@@ -50,8 +50,11 @@ final class UpdateManager {
     private static final String KEY_DOWNLOAD_ID = "download_id";
     private static final String KEY_ASSET_NAME = "asset_name";
     private static final String KEY_DIGEST = "asset_digest";
+    private static final String KEY_TARGET_VERSION = "target_version";
     private static final String KEY_INSTALL_REQUESTED = "install_requested";
+    private static final String KEY_INSTALL_REQUESTED_AT = "install_requested_at";
     private static final String KEY_PERMISSION_PROMPTED = "permission_prompted";
+    private static final long INSTALL_RETRY_TIMEOUT_MS = 2 * 60 * 1000L;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final AtomicBoolean VERIFYING = new AtomicBoolean();
 
@@ -59,9 +62,36 @@ final class UpdateManager {
 
     static void checkForUpdates(Activity activity, boolean manual) {
         SharedPreferences prefs = prefs(activity);
-        if (prefs.getLong(KEY_DOWNLOAD_ID, -1L) >= 0L) {
-            resumePendingInstall(activity);
-            return;
+        reconcilePendingState(activity, prefs);
+        long pendingId = prefs.getLong(KEY_DOWNLOAD_ID, -1L);
+        if (pendingId >= 0L) {
+            boolean installRequested = prefs.getBoolean(KEY_INSTALL_REQUESTED, false);
+            long requestedAt = prefs.getLong(KEY_INSTALL_REQUESTED_AT, 0L);
+            long requestAge = System.currentTimeMillis() - requestedAt;
+            if (installRequested && requestedAt > 0L && requestAge < INSTALL_RETRY_TIMEOUT_MS) {
+                if (manual) Toast.makeText(activity, "Η επιβεβαίωση εγκατάστασης είναι ήδη σε εξέλιξη.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            if (installRequested) {
+                prefs.edit()
+                        .putBoolean(KEY_INSTALL_REQUESTED, false)
+                        .remove(KEY_INSTALL_REQUESTED_AT)
+                        .apply();
+            }
+
+            int status = downloadStatus(activity, pendingId);
+            if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                if (manual) prefs.edit().putBoolean(KEY_PERMISSION_PROMPTED, false).apply();
+                resumePendingInstall(activity);
+                return;
+            }
+            if (status == DownloadManager.STATUS_PENDING
+                    || status == DownloadManager.STATUS_RUNNING
+                    || status == DownloadManager.STATUS_PAUSED) {
+                if (manual) Toast.makeText(activity, "Η ενημέρωση κατεβαίνει ήδη…", Toast.LENGTH_LONG).show();
+                return;
+            }
+            clearPending(activity, false);
         }
         if (manual) Toast.makeText(activity, "Έλεγχος για νέα έκδοση…", Toast.LENGTH_SHORT).show();
         EXECUTOR.execute(() -> {
@@ -84,8 +114,11 @@ final class UpdateManager {
 
     private static Release readLatestRelease() throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(RELEASE_API).openConnection();
+        connection.setUseCaches(false);
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(20000);
+        connection.setRequestProperty("Cache-Control", "no-cache");
+        connection.setRequestProperty("Pragma", "no-cache");
         connection.setRequestProperty("Accept", "application/vnd.github+json");
         connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28");
         connection.setRequestProperty("User-Agent", "SpotDL-Android/" + BuildConfig.VERSION_NAME);
@@ -165,7 +198,9 @@ final class UpdateManager {
                 .putLong(KEY_DOWNLOAD_ID, id)
                 .putString(KEY_ASSET_NAME, release.assetName())
                 .putString(KEY_DIGEST, release.digest())
+                .putString(KEY_TARGET_VERSION, release.version())
                 .putBoolean(KEY_INSTALL_REQUESTED, false)
+                .remove(KEY_INSTALL_REQUESTED_AT)
                 .putBoolean(KEY_PERMISSION_PROMPTED, false)
                 .apply();
         Toast.makeText(
@@ -320,11 +355,17 @@ final class UpdateManager {
                         result,
                         PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE
                 );
-                prefs(activity).edit().putBoolean(KEY_INSTALL_REQUESTED, true).apply();
+                prefs(activity).edit()
+                        .putBoolean(KEY_INSTALL_REQUESTED, true)
+                        .putLong(KEY_INSTALL_REQUESTED_AT, System.currentTimeMillis())
+                        .apply();
                 session.commit(callback.getIntentSender());
             }
         } catch (Exception error) {
-            prefs(activity).edit().putBoolean(KEY_INSTALL_REQUESTED, false).apply();
+            prefs(activity).edit()
+                    .putBoolean(KEY_INSTALL_REQUESTED, false)
+                    .remove(KEY_INSTALL_REQUESTED_AT)
+                    .apply();
             Toast.makeText(activity, "Δεν ξεκίνησε η εγκατάσταση: " + readable(error), Toast.LENGTH_LONG).show();
         }
     }
@@ -334,7 +375,32 @@ final class UpdateManager {
     }
 
     static void installationCanRetry(Context context) {
-        prefs(context).edit().putBoolean(KEY_INSTALL_REQUESTED, false).apply();
+        prefs(context).edit()
+                .putBoolean(KEY_INSTALL_REQUESTED, false)
+                .remove(KEY_INSTALL_REQUESTED_AT)
+                .apply();
+    }
+
+    private static void reconcilePendingState(Context context, SharedPreferences prefs) {
+        if (prefs.getLong(KEY_DOWNLOAD_ID, -1L) < 0L) return;
+        String targetVersion = prefs.getString(KEY_TARGET_VERSION, "");
+        if (targetVersion == null
+                || targetVersion.isBlank()
+                || compareVersions(BuildConfig.VERSION_NAME, targetVersion) >= 0) {
+            clearPending(context, true);
+        }
+    }
+
+    private static int downloadStatus(Context context, long id) {
+        DownloadManager manager = context.getSystemService(DownloadManager.class);
+        if (manager == null) return DownloadManager.STATUS_FAILED;
+        DownloadManager.Query query = new DownloadManager.Query().setFilterById(id);
+        try (android.database.Cursor cursor = manager.query(query)) {
+            if (cursor == null || !cursor.moveToFirst()) return DownloadManager.STATUS_FAILED;
+            return cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+        } catch (Exception ignored) {
+            return DownloadManager.STATUS_FAILED;
+        }
     }
 
     private static void clearPending(Context context, boolean deleteApk) {
